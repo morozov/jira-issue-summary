@@ -1,0 +1,50 @@
+#!/usr/bin/env php
+<?php
+
+function __die($message, $code = 1) {
+    fwrite(STDERR, $message . PHP_EOL);
+    exit($code);
+}
+
+if (!is_file(__DIR__ . '/config.php')) {
+    __die('Configuration file not found');
+}
+$config = require __DIR__ . '/config.php';
+
+if ($_SERVER['argc'] != 2) {
+    __die('Usage: ' . $_SERVER['argv'][0] . ' <issue>');
+}
+
+$issue = $_SERVER['argv'][1];
+$url = rtrim($config['url'], '/')
+    . '/rest/api/latest/issue/' . rawurlencode($issue)
+    . '?'
+    . http_build_query(array(
+        'fields' => 'summary',
+    ));
+
+$context = stream_context_create(array(
+    'http' => array(
+        'header'  => 'Authorization: Basic '
+            . base64_encode($config['username'] . ':' . $config['password']),
+        'ignore_errors' => true,
+    )
+));
+
+$fp = @fopen($url, 'r', false, $context);
+if ($fp) {
+    $meta_data = stream_get_meta_data($fp);
+    $status = array_shift($meta_data['wrapper_data']);
+    if (strpos($status, '200') === false) {
+        __die('Unable to fetch data: ' . $status);
+    }
+
+    $data = stream_get_contents($fp);
+    $data = json_decode($data, true);
+
+    $message = sprintf('[%s] %s', $issue, $data['fields']['summary']);
+
+    echo $message, PHP_EOL;
+} else {
+    __die('Something went wrong: ' . $php_errormsg);
+}
